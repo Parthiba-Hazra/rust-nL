@@ -21,6 +21,11 @@ pub enum Color {
     White = 15,
 }
 
+use volatile::Volatile;
+use core::fmt::{Write, Result, Arguments};
+use lazy_static::lazy_static;
+use spin::Mutex;
+
 // Struct representing the color code for text
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -48,7 +53,7 @@ const BUFFER_WIDTH: usize = 80;
 // Struct representing the VGA buffer
 #[repr(transparent)]
 struct Buffer {
-    chars: [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
 // Struct representing a text writer for the VGA buffer
@@ -72,10 +77,10 @@ impl Writer {
                 let col = self.column_position;  // Get the current column position
 
                 let color_code = self.color_code;  // Get the color code for the text
-                self.buffer.chars[row][col] = ScreenChar {
+                self.buffer.chars[row][col].write(ScreenChar {
                     ascii_character: byte,  // Set the ASCII character for the current position
                     color_code,            // Set the color code for the current position
-                };
+                });
                 self.column_position += 1;  // Move to the next column position
             }
         }
@@ -91,23 +96,92 @@ impl Writer {
         }
     }
 
-    // Move to a new line
+    // Move to a new line in the VGA buffer
     fn new_line(&mut self) {
-        // ... implementation for moving to a new line (not provided in the code snippet)
+        // Loop through each row (except the first one)
+        for row in 1..BUFFER_HEIGHT {
+            // Loop through each column in the buffer
+            for col in 0..BUFFER_WIDTH {
+                // Read the character from the current row and column
+                let character = self.buffer.chars[row][col].read();
+
+                // Write the character to the row above in the same column
+                self.buffer.chars[row - 1][col].write(character);
+            }
+        }
+
+        // Clear the last row by filling it with empty characters
+        self.clear_row(BUFFER_HEIGHT - 1);
+
+        // Reset the column position to the beginning of the new line
+        self.column_position = 0;
+    }
+
+
+    // Clear a specific row in the VGA buffer
+    fn clear_row(&mut self, row: usize) {
+        // Create a blank character with a space and the current color
+        let blank = ScreenChar {
+            ascii_character: b' ',
+            color_code: self.color_code,
+        };
+
+        // Loop through each column in the specified row
+        for col in 0..BUFFER_WIDTH {
+            // Write the blank character to clear the row
+            self.buffer.chars[row][col].write(blank);
+        }
     }
 }
 
+impl Write for Writer {
+    fn write_str(&mut self, s: &str) -> Result {
+        self.write_string(s);
+        Ok(())
+    }
+}
 
-// Function to print a sample text using the Writer
-pub fn print() {
-    let mut writer = Writer {
+// // Function to print a sample text using the Writer
+// pub fn print() {
+//     let mut writer = Writer {
+//         column_position: 0,
+//         color_code: ColorCode::new(Color::Yellow, Color::Black),
+//         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+//     };
+
+//     // Example usage of the Writer to print "Hello World!"
+//     writer.write_byte(b'H');
+//     writer.write_string("ello ");
+//     write!(writer, "the numbers are {} and {}", 42, 1.0/3.0).unwrap();
+// }
+
+lazy_static!{
+    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-    };
+        buffer: unsafe {
+            &mut *(0xb8000 as *mut Buffer)
+        },
+    });
+}
 
-    // Example usage of the Writer to print "Hello World!"
-    writer.write_byte(b'H');
-    writer.write_string("ello ");
-    writer.write_string("World!");
+
+// Tease are the copy of original macros, just modified to use our own _print function
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => (
+        $crate::vga_buffer::_print(format_args!($($arg)*))
+    );
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: Arguments) {
+    use core::fmt::write;
+    WRITER.lock().write_fmt(args).unwrap();
 }
