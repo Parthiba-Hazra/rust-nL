@@ -87,14 +87,28 @@ impl Writer {
     }
 
     // Write a string to the screen
+    // pub fn write_string(&mut self, s: &str) {
+    //     for byte in s.bytes() {
+    //         match byte {
+    //             0x20..=0x70 | b'\n' => self.write_byte(byte),  // Write the byte if it's within printable ASCII range or a newline
+    //             _ => self.write_byte(b'*'),  // Use a different placeholder character for non-printable ASCII characters
+    //         }
+    //     }
+    // }
+
+    // Write a string to the screen
     pub fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
-            match byte {
-                0x20..=0x70 | b'\n' => self.write_byte(byte),  // Write the byte if it's within printable ASCII range or a newline
-                _ => self.write_byte(0xfe),  // Write a placeholder character for non-printable ASCII characters
+            if byte >= 0x20 && byte <= 0x7E || byte == b'\n' {
+                // Printable ASCII character or newline, print the byte
+                self.write_byte(byte);
+            } else {
+                // Non-printable ASCII character, print the placeholder character
+                self.write_byte(b'*');
             }
         }
     }
+
 
     // Move to a new line in the VGA buffer
     fn new_line(&mut self) {
@@ -184,4 +198,26 @@ macro_rules! println {
 pub fn _print(args: Arguments) {
     use core::fmt::write;
     WRITER.lock().write_fmt(args).unwrap();
+}
+
+#[test_case]
+fn test_println_simple() {
+    println!("test_println_simple output");
+}
+
+#[test_case]
+fn test_println_many() {
+    for _ in 0..200 {
+        println!("test_prointln_many output");
+    }
+}
+
+#[test_case]
+fn test_println_outout() {
+    let s = "Some test string that fits on a single line";
+    println!("{}", s);
+    for (i, c) in s.chars().enumerate() {
+        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
+        assert_eq!(char::from(screen_char.ascii_character), c);
+    }
 }
