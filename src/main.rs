@@ -4,8 +4,8 @@
 #![test_runner(rust_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use core::panic::PanicInfo;
 use rust_os::println;
+use core::panic::PanicInfo;
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -14,23 +14,27 @@ pub extern "C" fn _start() -> ! {
     rust_os::init();
 
     fn stack_overflow() {
-        stack_overflow();
+        stack_overflow(); // for each recursion, the return address is pushed
     }
 
-    stack_overflow();
-    // x86_64::instructions::interrupts::int3();
+    // uncomment line below to trigger a stack overflow
+    // stack_overflow();
 
     #[cfg(test)]
     test_main();
 
     println!("It did not crash!");
-    loop {}
+    loop {
+        use rust_os::print;
+        print!("-");
+    }
 }
 
+/// This function is called on panic.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{info}");
+    println!("{}", info);
     loop {}
 }
 
@@ -38,4 +42,9 @@ fn panic(info: &PanicInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     rust_os::test_panic_handler(info)
+}
+
+#[test_case]
+fn trivial_assertion() {
+    assert_eq!(1, 1);
 }
