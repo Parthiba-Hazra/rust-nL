@@ -7,6 +7,7 @@ use spin;
 
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET as isize,
+    Keyboard,
 }
 
 // Define offsets for PICs
@@ -46,7 +47,10 @@ lazy_static! {
 
         idt[InterruptIndex::Timer.into()]
             .set_handler_fn(timer_interrupt_handler);
-        
+
+        idt[InterruptIndex::Keyboard.into()]
+            .set_handler_fn(keyboard_interrupt_handler);
+
         // Return the initialized IDT
         idt
     };
@@ -77,6 +81,66 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
         PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.into())
     }
 }
+
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stakc_frame: InterruptStackFrame) {
+    
+    use x86_64::instructions::port::Port;
+    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+    use spin::Mutex;
+
+    lazy_static! {
+        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = 
+        Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
+    }
+
+    let mut keyboard = KEYBOARD.lock();
+    let mut port = Port::new(0x60);
+    
+    let scanCode: u8 = unsafe { port.read() };
+    if let Ok(Some(key_event)) = keyboard.add_byte(scanCode) {
+        if let Some(key) = keyboard.process_keyevent(key_event) {
+            match key {
+                DecodedKey::Unicode(character) => print!("{}", character),
+                DecodedKey::RawKey(key) => print!("{:?}", key), 
+            }
+        }
+    }
+
+    unsafe {
+        PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.into())
+    }
+}
+
+// extern "x86-interrupt" fn keyboard_interrupt_handler(_stakc_frame: InterruptStackFrame) {
+//     use x86_64::instructions::port::Port;
+
+//     // Create a static array to map scan codes to characters
+//     static SCANCODE_MAP: [char; 128] = [
+//         '\0', '\0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
+//         '\0', '\0', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+//         '\0', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', '\0', '\\',
+//         'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', '\0', '*', '\0', ' ',
+//         '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+//         '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+//         '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+//         '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+//         '\0', '\0', '\0', '\0','\0', '\0',
+//     ];
+
+//     let mut port = Port::new(0x60);
+//     let scan_code: u8 = unsafe { port.read() };
+
+//     // Check if the scan code is within the bounds of the mapping array
+//     if (scan_code & 0x80) == 0 {
+//         // If it's a regular key press, print the corresponding character
+//         let character = SCANCODE_MAP[scan_code as usize];
+//         print!("{}", character);
+//     }
+
+//     unsafe {
+//         PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.into())
+//     }
+// }
 
 // Test case for the breakpoint exception
 #[test_case]

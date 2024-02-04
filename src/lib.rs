@@ -12,6 +12,12 @@ pub mod interrupts;
 pub mod serial;
 pub mod vga_buffer;
 
+pub fn hault_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+
 pub fn init() {
     gdt::init();
     interrupts::init_idt();
