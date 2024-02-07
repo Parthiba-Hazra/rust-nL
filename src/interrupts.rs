@@ -1,5 +1,5 @@
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
-use crate::{gdt, print, println};
+use x86_64::structures::idt::{InterruptDescriptorTable, PageFaultErrorCode, InterruptStackFrame};
+use crate::{gdt, print, println, hault_loop};
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -50,6 +50,8 @@ lazy_static! {
 
         idt[InterruptIndex::Keyboard.into()]
             .set_handler_fn(keyboard_interrupt_handler);
+
+        idt.page_fault.set_handler_fn(page_fault_handler);
 
         // Return the initialized IDT
         idt
@@ -147,4 +149,14 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stakc_frame: InterruptStac
 fn test_breakpoint_exception() {
     // Invoke a breakpoint exception
     x86_64::instructions::interrupts::int3();
+}
+
+extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode,) {
+    use x86_64::registers::control::Cr2;
+
+    println!("EXCEPTION: PAGE FAULT");
+    println!("Accessed Address: {:?}", Cr2::read());
+    println!("Error Code: {:?}", error_code);
+    println!("{:#?}", stack_frame);
+    hault_loop();
 }

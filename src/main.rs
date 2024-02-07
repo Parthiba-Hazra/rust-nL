@@ -20,6 +20,18 @@ pub extern "C" fn _start() -> ! {
     // uncomment line below to trigger a stack overflow
     // stack_overflow();
 
+    use x86_64::registers::control::Cr3;
+
+    let (level_4_page_table, _) = Cr3::read();
+    println!("Level 4 page table at: {:?}", level_4_page_table.start_address());
+
+    // let pointer = 0x20534a as *mut u8;
+    // unsafe { let x = *pointer; }
+    // println!("read worked");
+
+    // unsafe { *pointer = 42; }
+    // println!("write worked");
+
     #[cfg(test)]
     test_main();
 
