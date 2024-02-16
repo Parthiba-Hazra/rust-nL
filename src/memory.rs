@@ -1,6 +1,7 @@
 use x86_64::{ structures::paging::PageTable, VirtAddr, };
 use x86_64::PhysAddr;
 use x86_64::structures::paging::{ OffsetPageTable, Page, PhysFrame, Mapper, Size4KiB, FrameAllocator };
+use bootloader::bootinfo::{ MemoryMap, MemoryRegionType };
 
 // Intialize a new OffsetPageTable.
 //
@@ -112,4 +113,56 @@ pub fn create_example_mapping(
         mapper.map_to(page, frame, flags, frame_allocator)
     };
     map_to_result.expect("map_to failed").flush();
+}
+
+pub struct EmptyFrameAllocator;
+
+unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        let frame = self.usable_frames().nth(self.next);
+        self.next += 1;
+        frame
+    }
+}
+
+// A FrameAllocator that returns usable frames from the bootloader's memory map.
+pub struct BootInfoFrameAllocator {
+    memory_map: &'static MemoryMap,
+    next: usize,
+}
+
+impl BootInfoFrameAllocator {
+    // Create a FrameAllocator from the passed memory map.
+    //
+    // This function is unsafe because the caller must guarantee theat the passed
+    // memory map is valid. The main requirement is that all frames that are marked
+    // as `USABLE` in it are really unused.
+    pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
+        BootInfoFrameAllocator {
+            memory_map,
+            next: 0,
+        }
+    }
+
+    /// Converts the memory map into an iterator of usable physical frames.
+    ///
+    /// # Returns
+    ///
+    /// An iterator yielding `PhysFrame` instances representing usable physical frames.
+    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+        // Convert the memory map into an iterator of memory regions
+        let regions = self.memory_map.iter();
+        
+        // Filter out only the usable memory regions
+        let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
+        
+        // Convert memory regions into address ranges
+        let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
+        
+        // Convert address ranges into frame start addresses, choosing every 4096th address
+        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
+        
+        // Convert frame start addresses into `PhysFrame` instances
+        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+    }
 }
