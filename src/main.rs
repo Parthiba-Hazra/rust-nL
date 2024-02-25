@@ -4,10 +4,13 @@
 #![test_runner(rust_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
 use rust_os::{memory::BootInfoFrameAllocator, println};
 use core::panic::{AssertUnwindSafe, PanicInfo};
 use bootloader::{BootInfo, entry_point};
 use x86_64::structures::paging::PageTable;
+use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
 
 entry_point!(kernel_main);
 
@@ -15,6 +18,7 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use rust_os::memory;
     use rust_os::memory::translate_addr;
+    use rust_os::allocator;
     use x86_64::{ structures::paging::{ Page, Translate}, VirtAddr };
 
     println!("Hello World{}", "!");
@@ -85,6 +89,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // unsafe { *pointer = 42; }
     // println!("write worked");
+
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("Heap initialization failed");
+
+    let heap_value = Box::new(7);
+    println!("heap_value at {:p}", heap_value);
+
+    // A vector that is Dynamically sized
+    let mut vec = Vec::new();
+    for i in 0..500 {
+        vec.push(i);
+    } 
+    println!("vec at {:p}", vec.as_slice());
+
+    // A referenced counted vector -> will be freed when count reaches 0
+    let reference_counted = Rc::new(vec![1,2,3]);
+    let cloned_referece = reference_counted.clone();
+    println!("current reference count is {}", Rc::strong_count(&cloned_referece));
+    core::mem::drop(reference_counted);
+    println!("reference count now - {}", Rc::strong_count(&cloned_referece));
 
     #[cfg(test)]
     test_main();
