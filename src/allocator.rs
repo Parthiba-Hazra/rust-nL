@@ -7,6 +7,9 @@ use x86_64::{
     VirtAddr,
 };
 use linked_list_allocator::LockedHeap;
+use bump::BumpAllocator;
+
+pub mod bump;
 
 /// A dummy allocator that always returns null pointers for allocation requests
 pub struct Dummy;
@@ -17,9 +20,12 @@ pub const HEAP_START: usize = 0x_7777_7777_7777;
 /// The size of the heap in bytes
 pub const HEAP_SIZE: usize = 700 * 1024;
 
-/// The global allocator instance
+// /// The global allocator instance
+// #[global_allocator]
+// static ALLOCATOR: LockedHeap = LockedHeap::empty();
+
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::new());
 
 unsafe impl GlobalAlloc for Dummy {
     /// Allocates memory according to the specified layout.
@@ -64,4 +70,14 @@ pub fn init_heap(
     }
 
     Ok(())
+}
+
+/// Align the given address `addr` upwards to alignment `align`.
+fn align_up(addr: usize, align: usize) -> usize {
+    let remainder = addr % align;
+    if remainder == 0 {
+        addr // addr already aligned
+    } else {
+        addr - remainder + align
+    }
 }
